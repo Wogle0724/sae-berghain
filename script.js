@@ -107,9 +107,34 @@ const lines = [
       document.body.style.background = "#000";
     }, 900);
   }
+  function reservePanelHeight() {
+    const panel = document.querySelector('.panel');
+  
+    // make a hidden sample line to measure true line height + margins
+    const sample = document.createElement('p');
+    sample.className = 'line';
+    sample.style.visibility = 'hidden';
+    sample.style.position = 'absolute';
+    sample.innerHTML = '<span class="type">Sample</span>';
+    panel.appendChild(sample);
+  
+    const cs = getComputedStyle(sample);
+    const lh = sample.getBoundingClientRect().height;
+    const gap = parseFloat(cs.marginTop) + parseFloat(cs.marginBottom);
+    panel.removeChild(sample);
+  
+    // total lines = your lines + 1 countdown line
+    const total = lines.length + 1;
+    const reserved = total * lh + (total - 1) * (gap || 0);
+  
+    panel.style.minHeight = `${reserved}px`;  // lock the center from the start
+  }
+  
   
   // Respect reduced motion
   const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  reservePanelHeight();
+
   if (prefersReduced) {
     for (let i = 0; i < lines.length; i++) {
       const el = byId("l" + i);
