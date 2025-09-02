@@ -1,3 +1,6 @@
+// ==== One-time view key ====
+const SEEN_KEY = "sae_once_seen_v1";
+
 // ==== Party text & timings ====
 const lines = [
   "ΣΑΕ Berghain",
@@ -9,12 +12,33 @@ const lines = [
 const initialDelayMs = 500;
 const charDelayMs = 28;
 const linePauseMs = 350;
-const destroySeconds = 99; // long countdown
+const destroySeconds = 10; // set what you want
 // ==============================
 
 const byId = (id) => document.getElementById(id);
 
-// Blink caret only on the most recently finished line
+// ---- One-time view: purple ΣAE only ----
+function showSigmaOnly() {
+  // nuke timers if any
+  try { window.stop(); } catch {}
+  document.body.className = ""; // remove vignette if you want
+  document.body.innerHTML = `
+    <div class="sigma-only">
+      <div class="logo">ΣΑΕ</div>
+    </div>
+  `;
+  // harden: background stays black
+  document.body.style.background = "#000";
+}
+
+// If already viewed on this browser, show mark and bail out.
+if (localStorage.getItem(SEEN_KEY)) {
+  showSigmaOnly();
+  // prevent the rest of the script from running
+  throw new Error("SAE: already viewed; showing mark only");
+}
+
+// ====== caret handling ======
 let lastCursorEl = null;
 function setCursor(el) {
   if (lastCursorEl) lastCursorEl.classList.remove("cursor");
@@ -22,7 +46,7 @@ function setCursor(el) {
   lastCursorEl = el;
 }
 
-// Split line into normal + gold parts (ΣΑΕ or SAE)
+// ΣΑΕ/SAE tokenizer (gold while typing)
 function tokenizeText(text) {
   const regex = /(ΣΑΕ|SAE)/gi;
   const parts = [];
@@ -36,7 +60,7 @@ function tokenizeText(text) {
   return parts;
 }
 
-// Measure final height up-front so the center never shifts
+// Reserve final height so center doesn't shift
 function reservePanelHeight() {
   const panel = document.querySelector(".panel");
   const sample = document.createElement("p");
@@ -56,28 +80,34 @@ function reservePanelHeight() {
   panel.style.minHeight = `${reserved}px`;
 }
 
-// Scale the entire panel to fit width & height (no wrapping, no overflow)
+// Scale the entire panel (keeps all lines inside, no wrap)
 function fitPanelScale() {
   const wrap  = document.querySelector(".wrap");
   const panel = document.querySelector(".panel");
   if (!wrap || !panel) return;
 
-  panel.style.setProperty("--zoom", 1); // reset scale before measuring
+  panel.style.setProperty("--zoom", 1);
+
+  // ensure we measure widest line, not clipped box
+  const prevOverflow = panel.style.overflow;
+  panel.style.overflow = "visible";
+
+  const types = [...panel.querySelectorAll(".type")];
+  const needW = types.length ? Math.max(...types.map(el => el.scrollWidth)) : panel.scrollWidth;
+  const needH = panel.scrollHeight;
 
   const availW = panel.clientWidth;
   const availH = wrap.clientHeight;
-
-  const needW = panel.scrollWidth;
-  const needH = panel.scrollHeight;
 
   const scaleW = availW > 0 ? Math.min(1, availW / needW) : 1;
   const scaleH = availH > 0 ? Math.min(1, availH / needH) : 1;
   const scale  = Math.min(scaleW, scaleH);
 
   panel.style.setProperty("--zoom", String(scale));
+  panel.style.overflow = prevOverflow;
 }
 
-// Type a line with live ΣΑΕ gold and scale the whole panel as we go
+// Type with live gold ΣΑΕ and scale panel as we go
 async function typeInto(el, text, speed) {
   el.classList.remove("cursor");
   el.innerHTML = "";
@@ -91,41 +121,44 @@ async function typeInto(el, text, speed) {
       for (let i = 0; i < part.text.length; i++) {
         span.textContent += part.text[i];
         fitPanelScale();
-        await new Promise((r) => setTimeout(r, speed));
+        await new Promise(r => setTimeout(r, speed));
       }
     } else {
       for (let i = 0; i < part.text.length; i++) {
         el.innerHTML += part.text[i];
         fitPanelScale();
-        await new Promise((r) => setTimeout(r, speed));
+        await new Promise(r => setTimeout(r, speed));
       }
     }
   }
-
   setCursor(el);
 }
 
 async function sequence() {
-  await new Promise((r) => setTimeout(r, initialDelayMs));
-
+  await new Promise(r => setTimeout(r, initialDelayMs));
   for (let i = 0; i < lines.length; i++) {
     const el = byId("l" + i);
     el.closest(".line").classList.add("show");
     await typeInto(el, lines[i], charDelayMs);
-    await new Promise((r) => setTimeout(r, linePauseMs));
+    await new Promise(r => setTimeout(r, linePauseMs));
   }
-
   startCountdown();
 }
 
 function startCountdown() {
-  const destroyLine = byId("destroy");          // <p.line.countdown>
-  const numEl       = byId("t");                // <span id="t" class="count-num">
+  // Countdown line HTML should be:
+  // <p class="line countdown" id="destroy" style="visibility:hidden;">
+  //   <span class="type" id="destroyType">
+  //     THIS MESSAGE WILL BE DESTROYED IN <span id="t" class="count-num">10</span>
+  //   </span>
+  // </p>
+  const destroyLine = byId("destroy");
+  const numEl = byId("t");
 
   destroyLine.style.visibility = "visible";
   requestAnimationFrame(() => {
-    destroyLine.classList.add("show");          // fade in like the other lines
-    fitPanelScale();                            // include this full line in scaling
+    destroyLine.classList.add("show");
+    fitPanelScale();
   });
 
   let t = destroySeconds;
@@ -133,19 +166,18 @@ function startCountdown() {
   const tick = setInterval(() => {
     t -= 1;
     numEl.textContent = t;
-    fitPanelScale();                            // keep whole line (text + number) fitting
+    fitPanelScale();
     if (t <= 0) { clearInterval(tick); obliterate(); }
   }, 1000);
 }
 
-
 function obliterate() {
+  // mark as seen so next visit shows only ΣAE
+  try { localStorage.setItem(SEEN_KEY, String(Date.now())); } catch {}
+
   const b = byId("blackout");
   b.classList.add("show");
-  setTimeout(() => {
-    document.body.innerHTML = "";
-    document.body.style.background = "#000";
-  }, 900);
+  setTimeout(showSigmaOnly, 900);
 }
 
 // ===== Boot =====
@@ -166,14 +198,19 @@ if (prefersReduced) {
   sequence();
 }
 
-// Refit on viewport changes (e.g., rotation, mobile chrome collapse)
+// Refit on viewport changes
 let _rf;
 window.addEventListener("resize", () => {
   clearTimeout(_rf);
   _rf = setTimeout(fitPanelScale, 150);
 });
 
-// Quick reset while testing (press R)
+// (Optional) developer reset: press Shift+D to clear one-time view
 window.addEventListener("keydown", (e) => {
-  if (e.key.toLowerCase() === "r") window.location.reload();
+  if (e.shiftKey && e.key.toLowerCase() === "d") {
+    localStorage.removeItem(SEEN_KEY);
+    location.reload();
+  }
 });
+
+

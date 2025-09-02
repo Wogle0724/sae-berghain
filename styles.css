@@ -127,3 +127,20 @@
     text-align: right;
     font-variant-numeric: tabular-nums; /* equal-width digits */
   }
+
+
+  /* One-time “seen” screen */
+.sigma-only{
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #000;
+}
+.sigma-only .logo{
+  color: #6a498e;             /* purple */
+  font-weight: 700;
+  font-family: "Share Tech Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: clamp(3rem, 14vw, 12rem);
+  letter-spacing: .05em;
+}
