@@ -14,6 +14,7 @@
     display: flex;
     align-items: center;      /* vertical centering */
     justify-content: center;  /* horizontal centering */
+    padding: 0;           /* remove extra padding */
   }
   
   .panel {
@@ -68,7 +69,7 @@
     background:radial-gradient(80% 60% at 50% 40%, rgba(255,255,255,.06) 0%, rgba(0,0,0,0) 60%, rgba(0,0,0,.7) 100%);
     mix-blend-mode:screen;}
 
-    .gold { color: #d4af37; } /* metallic-ish gold */
+    .gold { color: #6a498e; font-weight: 600} 
 
     
   
