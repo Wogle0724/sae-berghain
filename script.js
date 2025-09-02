@@ -3,7 +3,7 @@ const lines = [
     "ΣΑΕ Berghain",
     "September 19th",
     "Doors Open 10:30",
-    "Black Attire Mandatory ",
+    "Black Attire Mandatory",
     "SPREAD THE WORD"
   ];
   const initialDelayMs = 500;
