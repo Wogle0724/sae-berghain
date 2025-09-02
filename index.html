@@ -15,8 +15,18 @@
   <script defer src="./script.js"></script>
 </head>
 <body class="vignette">
+  <!-- Password Gate -->
+<div id="gate" class="gate" aria-modal="true" role="dialog">
+  <div class="gate-card">
+    <label for="pw" class="gate-label">BΣRGHAIN</label>
+    <input id="pw" class="gate-input" type="password" autocomplete="off" />
+    <button id="pwBtn" class="gate-btn" style="display: none" type="button"></button>
+    <p id="pwErr" class="gate-err" aria-live="polite"></p>
+  </div>
+</div>
+
   <div class="wrap">
-    <main class="panel" aria-live="polite" aria-atomic="true">
+    <main class="panel hidden" aria-live="polite" aria-atomic="true">
       <p class="line"><span class="type" id="l0"></span></p>
       <p class="line"><span class="type" id="l1"></span></p>
       <p class="line"><span class="type" id="l2"></span></p>
@@ -25,7 +35,7 @@
 
       <p class="line countdown" id="destroy" style="visibility:hidden;">
         <span class="type" id="destroyType">
-          THIS MESSAGE WILL BE DESTROYED IN <span id="t" class="count-num">99</span>
+          THIS MESSAGE WILL BE DESTROYED IN <span id="t" class="count-num">10</span>
         </span>
       </p>
 
@@ -34,5 +44,7 @@
   </div>
 
   <div class="blackout" id="blackout" aria-hidden="true"></div>
+  <audio id="bgm" src="./berghain.mp3" preload="auto" loop playsinline></audio>
+
 </body>
 </html>

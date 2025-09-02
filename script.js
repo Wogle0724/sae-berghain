@@ -19,23 +19,157 @@ const byId = (id) => document.getElementById(id);
 
 // ---- One-time view: purple ΣAE only ----
 function showSigmaOnly() {
-  // nuke timers if any
-  try { window.stop(); } catch {}
-  document.body.className = ""; // remove vignette if you want
-  document.body.innerHTML = `
-    <div class="sigma-only">
-      <div class="logo">ΣΑΕ</div>
-    </div>
-  `;
-  // harden: background stays black
+  // Keep background black and remove vignette if you like
   document.body.style.background = "#000";
+  document.body.classList.remove("vignette");
+
+  // Hide the main app content but DO NOT replace <body> (which would kill audio)
+  const wrap = document.querySelector(".wrap");
+  if (wrap) wrap.style.display = "none";
+
+  // Create/ensure the Sigma overlay
+  let overlay = document.getElementById("sigmaOverlay");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "sigmaOverlay";
+    overlay.style.cssText = `
+      position: fixed; inset: 0; display: grid; place-items: center; 
+      background: #000; z-index: 9999;
+    `;
+    const logo = document.createElement("div");
+    logo.textContent = "ΣΑΕ";
+    logo.style.cssText = `
+      color:#6a498e; font-weight:700;
+      font-family:"Share Tech Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: clamp(3rem, 14vw, 12rem); letter-spacing:.05em;
+    `;
+    overlay.appendChild(logo);
+    document.body.appendChild(overlay);
+  }
 }
 
-// If already viewed on this browser, show mark and bail out.
+// If already viewed on this browser, show mark and try to start music, then bail out.
 if (localStorage.getItem(SEEN_KEY)) {
+  autoplayBgmHard();   // <- force autoplay (muted first), then unmute+fade in
   showSigmaOnly();
-  // prevent the rest of the script from running
   throw new Error("SAE: already viewed; showing mark only");
+}
+
+
+// ===== Password gate additions =====
+const PASSWORD_SHA256_HEX = "b50d427a71ef5f98a1bdd4335b71d381dc6a3e937d899f87b92af24121bb9579"; // sha256("919")
+
+async function sha256Hex(str) {
+  const buf = new TextEncoder().encode(str);
+  const digest = await crypto.subtle.digest("SHA-256", buf);
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+async function passwordMatches(input) {
+  const hex = await sha256Hex(input);
+  return hex === PASSWORD_SHA256_HEX;
+}
+
+function ensureGateDom() {
+  if (byId("gate")) return;
+
+  const gate = document.createElement("div");
+  gate.id = "gate";
+  gate.setAttribute("role", "dialog");
+  gate.setAttribute("aria-modal", "true");
+  gate.style.cssText = `
+    position:fixed;inset:0;display:grid;place-items:center;
+    background:rgba(0,0,0,0.92);backdrop-filter:blur(2px);
+    transition:opacity 400ms ease, visibility 400ms ease;
+    opacity:1;visibility:visible;z-index:9999;
+  `;
+
+  const card = document.createElement("div");
+  card.style.cssText = `
+    width:min(90vw,480px);background:#0a0a0a;border:1px solid #1f1f1f;
+    border-radius:16px;padding:28px 24px;box-shadow:0 10px 30px rgba(0,0,0,.6);
+    text-align:center;color:#e8e8e8;font-family:'Share Tech Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  `;
+
+  const label = document.createElement("label");
+  label.setAttribute("for", "pw");
+  label.textContent = "Enter Password:";
+  label.style.cssText = `display:block;font-size:1.1rem;letter-spacing:.08em;margin-bottom:14px;`;
+
+  const input = document.createElement("input");
+  input.id = "pw";
+  input.type = "password";
+  input.autocomplete = "off";
+  input.style.cssText = `
+    width:100%;padding:14px 16px;border-radius:12px;border:1px solid #262626;
+    background:#0d0d0d;color:#e8e8e8;outline:none;font-size:1rem;
+  `;
+
+  const btn = document.createElement("button");
+  btn.id = "pwBtn";
+  btn.type = "button";
+  btn.textContent = "Unlock";
+  btn.style.cssText = `
+    margin-top:14px;width:100%;padding:12px 16px;border-radius:12px;border:1px solid #6a498e;
+    background:#6a498e;color:#fff;font-weight:600;letter-spacing:.05em;cursor:pointer;
+  `;
+
+  const err = document.createElement("p");
+  err.id = "pwErr";
+  err.setAttribute("aria-live", "polite");
+  err.style.cssText = `height:1.4em;margin-top:10px;color:#c23;font-size:.95rem;`;
+
+  card.appendChild(label);
+  card.appendChild(input);
+  card.appendChild(btn);
+  card.appendChild(err);
+  gate.appendChild(card);
+  document.body.appendChild(gate);
+}
+
+function showGate() {
+  ensureGateDom();
+
+  const gate = byId("gate");
+  const input = byId("pw");
+  const btn = byId("pwBtn");
+  const err = byId("pwErr");
+  const panel = document.querySelector(".panel");
+
+  // Hide the panel until we unlock
+  if (panel) {
+    panel.style.opacity = "0";
+    panel.style.transition = "opacity 400ms ease";
+  }
+
+  const unlock = async () => {
+    err.textContent = "";
+    const ok = await passwordMatches(input.value || "");
+    if (!ok) {
+      err.textContent = "Incorrect password.";
+      input.select();
+      return;
+    }
+
+    // Mark as seen immediately (one-time behavior on this browser)
+    try { localStorage.setItem(SEEN_KEY, String(Date.now())); } catch {}
+
+    // Fade gate, reveal panel, then start original sequence + music
+    gate.style.opacity = "0";
+    gate.style.visibility = "hidden";
+    setTimeout(() => {
+      if (panel) {
+        panel.style.opacity = "1";
+      }
+      playBgm();        // start music after unlock (user gesture -> allowed)
+      bootAfterUnlock();
+      gate.remove();    // remove the gate from DOM to avoid focus traps
+    }, 280);
+  };
+
+  btn.addEventListener("click", unlock);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") unlock(); });
+
+  setTimeout(() => input.focus(), 0);
 }
 
 // ====== caret handling ======
@@ -63,6 +197,7 @@ function tokenizeText(text) {
 // Reserve final height so center doesn't shift
 function reservePanelHeight() {
   const panel = document.querySelector(".panel");
+  if (!panel) return;
   const sample = document.createElement("p");
   sample.className = "line";
   sample.style.visibility = "hidden";
@@ -87,8 +222,6 @@ function fitPanelScale() {
   if (!wrap || !panel) return;
 
   panel.style.setProperty("--zoom", 1);
-
-  // ensure we measure widest line, not clipped box
   const prevOverflow = panel.style.overflow;
   panel.style.overflow = "visible";
 
@@ -146,15 +279,8 @@ async function sequence() {
 }
 
 function startCountdown() {
-  // Countdown line HTML should be:
-  // <p class="line countdown" id="destroy" style="visibility:hidden;">
-  //   <span class="type" id="destroyType">
-  //     THIS MESSAGE WILL BE DESTROYED IN <span id="t" class="count-num">10</span>
-  //   </span>
-  // </p>
   const destroyLine = byId("destroy");
   const numEl = byId("t");
-
   destroyLine.style.visibility = "visible";
   requestAnimationFrame(() => {
     destroyLine.classList.add("show");
@@ -172,45 +298,130 @@ function startCountdown() {
 }
 
 function obliterate() {
-  // mark as seen so next visit shows only ΣAE
   try { localStorage.setItem(SEEN_KEY, String(Date.now())); } catch {}
-
   const b = byId("blackout");
-  b.classList.add("show");
-  setTimeout(showSigmaOnly, 900);
+  if (b) {
+    b.classList.add("show");
+    setTimeout(showSigmaOnly, 900);
+  } else {
+    showSigmaOnly();
+  }
+  // Do NOT stop music here; it should keep playing on the ΣAE overlay.
 }
 
-// ===== Boot =====
-const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-reservePanelHeight();
-fitPanelScale();
-
-if (prefersReduced) {
-  for (let i = 0; i < lines.length; i++) {
-    const el = byId("l" + i);
-    el.closest(".line").classList.add("show");
-    el.innerHTML = lines[i].replace(/(ΣΑΕ|SAE)/gi, '<span class="gold">$1</span>');
-  }
-  setCursor(byId("l" + (lines.length - 1)));
-  startCountdown();
+// ---- Boot AFTER unlock (runs your original animation) ----
+function bootAfterUnlock() {
+  reservePanelHeight();
   fitPanelScale();
-} else {
-  sequence();
+
+  const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (prefersReduced) {
+    for (let i = 0; i < lines.length; i++) {
+      const el = byId("l" + i);
+      el.closest(".line").classList.add("show");
+      el.innerHTML = lines[i].replace(/(ΣΑΕ|SAE)/gi, '<span class="gold">$1</span>');
+    }
+    setCursor(byId("l" + (lines.length - 1)));
+    startCountdown();
+    fitPanelScale();
+  } else {
+    sequence();
+  }
 }
 
-// Refit on viewport changes
-let _rf;
-window.addEventListener("resize", () => {
-  clearTimeout(_rf);
-  _rf = setTimeout(fitPanelScale, 150);
-});
+// ===== Initial boot (now gated) =====
+(function init() {
+  // If already "seen", we already bailed above.
 
-// (Optional) developer reset: press Shift+D to clear one-time view
-window.addEventListener("keydown", (e) => {
-  if (e.shiftKey && e.key.toLowerCase() === "d") {
-    localStorage.removeItem(SEEN_KEY);
-    location.reload();
+  // Show password gate and wait for unlock
+  showGate();
+
+  // Refit on viewport changes
+  let _rf;
+  window.addEventListener("resize", () => {
+    clearTimeout(_rf);
+    _rf = setTimeout(fitPanelScale, 150);
+  });
+
+  // (Optional) developer reset: Shift+D to clear one-time view
+  window.addEventListener("keydown", (e) => {
+    if (e.shiftKey && e.key.toLowerCase() === "d") {
+      localStorage.removeItem(SEEN_KEY);
+      location.reload();
+    }
+  });
+})();
+
+// === Background music (auto-play on reload; no UI) ===
+function ensureBgm() {
+  let a = document.getElementById("bgm");
+  if (!a) {
+    a = document.createElement("audio");
+    a.id = "bgm";
+    a.src = "./berghain.mp3";   // change path if needed
+    a.loop = true;
+    a.preload = "auto";
+    a.autoplay = true;
+    a.setAttribute("playsinline", "true");
+    document.body.appendChild(a);
   }
-});
+  return a;
+}
+
+function fadeAudio(audio, target = 0.35, ms = 800) {
+  const steps = 24, dt = ms / steps;
+  const start = audio.volume || 0;
+  let i = 0;
+  clearInterval(audio.__fadeId);
+  audio.__fadeId = setInterval(() => {
+    i++;
+    audio.volume = start + (target - start) * (i / steps);
+    if (i >= steps) clearInterval(audio.__fadeId);
+  }, dt);
+}
+
+/**
+ * Autoplay strategy that works on most browsers without user gesture:
+ * 1) start muted (allowed), 2) begin playback, 3) unmute + fade in.
+ * Re-tries a few times during load.
+ */
+function autoplayBgmHard() {
+  const a = ensureBgm();
+  a.currentTime = 0;    // restart on each load
+
+  const tryPlay = () => a.play().catch(() => {});
+  // Kick a few attempts during early load (helps with iOS timing)
+  tryPlay();
+  const retries = [150, 400, 800, 1200, 1800];
+  retries.forEach(t => setTimeout(tryPlay, t));
+
+  // Once the audio is actually playing, unmute and fade in
+  const onPlaying = () => {
+    // small delay before unmute to avoid policy edge-cases
+    setTimeout(() => {
+      a.muted = false;
+      fadeAudio(a, 0.35, 900);
+    }, 200);
+    a.removeEventListener("playing", onPlaying);
+  };
+  a.addEventListener("playing", onPlaying);
+
+  // Fallback: if metadata is ready but "playing" didn't fire yet, poke play again
+  a.addEventListener("canplay", tryPlay, { once: true });
+
+  // If the page is restored from bfcache, try again
+  window.addEventListener("pageshow", () => { tryPlay(); }, { once: true });
+}
+
+// Keep your existing playBgm() for the post-unlock (gesture) path if you want:
+async function playBgm() {
+  const a = ensureBgm();
+  try {
+    a.currentTime = 0;
+    await a.play();            // allowed due to the unlock gesture
+    fadeAudio(a, 0.35, 800);
+  } catch {}
+}
 
 
+//localStorage.removeItem("sae_once_seen_v1");
