@@ -32,7 +32,7 @@
     --zoom: 1;
     transform: translate(-50%, -50%) scale(var(--zoom));
     transform-origin: center;
-    width: min(60%, 900px);
+    width: min(70%, 900px);
     text-align:center;
     line-height:1.25;
     letter-spacing:.5px;
