@@ -212,8 +212,6 @@ function showGate() {
       return;
     }
 
-    try { localStorage.setItem(SEEN_KEY, String(Date.now())); } catch {}
-
     gate.style.opacity = "0";
     gate.style.visibility = "hidden";
     setTimeout(() => {
