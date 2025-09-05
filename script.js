@@ -13,84 +13,21 @@ const initialDelayMs = 500;
 const charDelayMs = 28;
 const linePauseMs = 350;
 const destroySeconds = 20; // set what you want
-
-// ---- Date glitch (keep "September  ??", pulse numbers briefly) ----
-const DATE_LINE_INDEX = 1; // lines[1]
-const DATE_GLITCH = {
-  base: "September ",
-  choices: [11, 18, 19, 20],
-  blinkMinMs: 60,     // how long the number shows
-  blinkMaxMs: 100,
-  gapMinMs: 200,      // time between pulses
-  gapMaxMs: 1000
-};
 // ==============================
 
 const byId = (id) => document.getElementById(id);
 
-function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-function injectGlitchStyles() {
-  if (document.getElementById("glitchStyles")) return;
-  const style = document.createElement("style");
-  style.id = "glitchStyles";
-  style.textContent = `
-    .glitch-num{
-      display:inline-block;
-      min-width:2ch;              /* stable width for  ?? vs numbers */
-      text-align:right;
-      font-variant-numeric: tabular-nums;
-    }
-    .glitching .glitch-num{
-      text-shadow: 0 0 6px rgba(106,73,142,.8), 0 0 12px rgba(106,73,142,.4);
-    }
-  `;
-  document.head.appendChild(style);
-}
-
-function ensureGlitchSpan(el) {
-  // "September <span class=glitch-num> ??</span>"
-  el.innerHTML = `${DATE_GLITCH.base}<span class="glitch-num"> ??</span>`;
-  fitPanelScale();
-  return el.querySelector(".glitch-num");
-}
-
-// Start continuous pulse glitch; returns a stopper { stop() {} } if you need it later.
-function startDateGlitch(el) {
-  injectGlitchStyles();
-  const numSpan = ensureGlitchSpan(el);
-
-  let running = true;
-  (async () => {
-    while (running) {
-      await sleep(randInt(DATE_GLITCH.gapMinMs, DATE_GLITCH.gapMaxMs));
-      if (!running) break;
-
-      const choice = DATE_GLITCH.choices[Math.floor(Math.random() * DATE_GLITCH.choices.length)];
-      el.classList.add("glitching");
-      numSpan.textContent = String(choice);
-      fitPanelScale();
-
-      await sleep(randInt(DATE_GLITCH.blinkMinMs, DATE_GLITCH.blinkMaxMs));
-
-      numSpan.textContent = " ??";
-      el.classList.remove("glitching");
-      fitPanelScale();
-    }
-  })();
-
-  return { stop() { running = false; } };
-}
-
 // ---- One-time view: purple ΣAE only ----
 function showSigmaOnly() {
+  // Keep background black and remove vignette if you like
   document.body.style.background = "#000";
   document.body.classList.remove("vignette");
 
+  // Hide the main app content but DO NOT replace <body> (which would kill audio)
   const wrap = document.querySelector(".wrap");
   if (wrap) wrap.style.display = "none";
 
+  // Create/ensure the Sigma overlay
   let overlay = document.getElementById("sigmaOverlay");
   if (!overlay) {
     overlay = document.createElement("div");
@@ -117,6 +54,7 @@ if (localStorage.getItem(SEEN_KEY)) {
   showSigmaOnly();
   throw new Error("SAE: already viewed; showing mark only");
 }
+
 
 // ===== Password gate additions =====
 const PASSWORD_SHA256_HEX = "b50d427a71ef5f98a1bdd4335b71d381dc6a3e937d899f87b92af24121bb9579"; // sha256("919")
@@ -212,13 +150,19 @@ function showGate() {
       return;
     }
 
+    // Mark as seen immediately (one-time behavior on this browser)
+    try { localStorage.setItem(SEEN_KEY, String(Date.now())); } catch {}
+
+    // Fade gate, reveal panel, then start original sequence + music
     gate.style.opacity = "0";
     gate.style.visibility = "hidden";
     setTimeout(() => {
-      if (panel) panel.style.opacity = "1";
+      if (panel) {
+        panel.style.opacity = "1";
+      }
       playBgm();        // start music after unlock (user gesture -> allowed)
       bootAfterUnlock();
-      gate.remove();
+      gate.remove();    // remove the gate from DOM to avoid focus traps
     }, 280);
   };
 
@@ -282,14 +226,14 @@ function fitPanelScale() {
   panel.style.overflow = "visible";
 
   const types = [...panel.querySelectorAll(".type")];
-  const needW = types.length  ? Math.max(...types.map(el => el.scrollWidth)) : panel.scrollWidth;
+  const needW = types.length ? Math.max(...types.map(el => el.scrollWidth)) : panel.scrollWidth;
   const needH = panel.scrollHeight;
 
   const availW = panel.clientWidth;
   const availH = wrap.clientHeight;
 
-  const scaleW = availW > 0  ? Math.min(1, availW / needW) : 1;
-  const scaleH = availH > 0  ? Math.min(1, availH / needH) : 1;
+  const scaleW = availW > 0 ? Math.min(1, availW / needW) : 1;
+  const scaleH = availH > 0 ? Math.min(1, availH / needH) : 1;
   const scale  = Math.min(scaleW, scaleH);
 
   panel.style.setProperty("--zoom", String(scale));
@@ -328,15 +272,7 @@ async function sequence() {
   for (let i = 0; i < lines.length; i++) {
     const el = byId("l" + i);
     el.closest(".line").classList.add("show");
-
-    if (i === DATE_LINE_INDEX) {
-      // Type "September  ??" once, then keep pulsing numbers and returning to " ??"
-      await typeInto(el, `${DATE_GLITCH.base} ??`, charDelayMs);
-      startDateGlitch(el);
-    } else {
-      await typeInto(el, lines[i], charDelayMs);
-    }
-
+    await typeInto(el, lines[i], charDelayMs);
     await new Promise(r => setTimeout(r, linePauseMs));
   }
   startCountdown();
@@ -384,10 +320,6 @@ function bootAfterUnlock() {
       const el = byId("l" + i);
       el.closest(".line").classList.add("show");
       el.innerHTML = lines[i].replace(/(ΣΑΕ|SAE)/gi, '<span class="gold">$1</span>');
-      if (i === DATE_LINE_INDEX) {
-        // show plain "September  ??" without animation for reduced motion
-        el.innerHTML = `${DATE_GLITCH.base} ??`;
-      }
     }
     setCursor(byId("l" + (lines.length - 1)));
     startCountdown();
@@ -450,7 +382,7 @@ function fadeAudio(audio, target = 0.35, ms = 800) {
 
 /**
  * Autoplay strategy that works on most browsers without user gesture:
- * 1) try play; 2) when 'playing' fires, fade in (unmute if you set muted elsewhere)
+ * 1) start muted (allowed), 2) begin playback, 3) unmute + fade in.
  * Re-tries a few times during load.
  */
 function autoplayBgmHard() {
@@ -458,19 +390,26 @@ function autoplayBgmHard() {
   a.currentTime = 0;    // restart on each load
 
   const tryPlay = () => a.play().catch(() => {});
+  // Kick a few attempts during early load (helps with iOS timing)
   tryPlay();
   const retries = [150, 400, 800, 1200, 1800];
   retries.forEach(t => setTimeout(tryPlay, t));
 
+  // Once the audio is actually playing, unmute and fade in
   const onPlaying = () => {
+    // small delay before unmute to avoid policy edge-cases
     setTimeout(() => {
+      a.muted = false;
       fadeAudio(a, 0.35, 900);
     }, 200);
     a.removeEventListener("playing", onPlaying);
   };
   a.addEventListener("playing", onPlaying);
 
+  // Fallback: if metadata is ready but "playing" didn't fire yet, poke play again
   a.addEventListener("canplay", tryPlay, { once: true });
+
+  // If the page is restored from bfcache, try again
   window.addEventListener("pageshow", () => { tryPlay(); }, { once: true });
 }
 
@@ -483,5 +422,6 @@ async function playBgm() {
     fadeAudio(a, 0.35, 800);
   } catch {}
 }
+
 
 //localStorage.removeItem("sae_once_seen_v1");
