@@ -11,22 +11,19 @@ const lines = [
 const initialDelayMs = 500;
 const charDelayMs = 28;
 const linePauseMs = 350;
-const destroySeconds = 20; // set what you want
+const destroySeconds = 20; // fade after this many seconds (no countdown UI)
 // ==============================
 
 const byId = (id) => document.getElementById(id);
 
 // ---- One-time view: purple ΣAE only ----
 function showSigmaOnly() {
-  // Keep background black and remove vignette if you like
   document.body.style.background = "#000";
   document.body.classList.remove("vignette");
 
-  // Hide the main app content but DO NOT replace <body> (which would kill audio)
   const wrap = document.querySelector(".wrap");
   if (wrap) wrap.style.display = "none";
 
-  // Create/ensure the Sigma overlay
   let overlay = document.getElementById("sigmaOverlay");
   if (!overlay) {
     overlay = document.createElement("div");
@@ -49,11 +46,10 @@ function showSigmaOnly() {
 
 // If already viewed on this browser, show mark and try to start music, then bail out.
 if (localStorage.getItem(SEEN_KEY)) {
-  autoplayBgmHard();   // <- force autoplay (muted first), then unmute+fade in
+  autoplayBgmHard();
   showSigmaOnly();
   throw new Error("SAE: already viewed; showing mark only");
 }
-
 
 // ===== Password gate additions =====
 const PASSWORD_SHA256_HEX = "b50d427a71ef5f98a1bdd4335b71d381dc6a3e937d899f87b92af24121bb9579"; // sha256("919")
@@ -134,7 +130,6 @@ function showGate() {
   const err = byId("pwErr");
   const panel = document.querySelector(".panel");
 
-  // Hide the panel until we unlock
   if (panel) {
     panel.style.opacity = "0";
     panel.style.transition = "opacity 400ms ease";
@@ -149,10 +144,8 @@ function showGate() {
       return;
     }
 
-    // Mark as seen immediately (one-time behavior on this browser)
     try { localStorage.setItem(SEEN_KEY, String(Date.now())); } catch {}
 
-    // Fade gate, reveal panel, then start original sequence + music
     gate.style.opacity = "0";
     gate.style.visibility = "hidden";
     setTimeout(() => {
@@ -161,7 +154,7 @@ function showGate() {
       }
       playBgm();        // start music after unlock (user gesture -> allowed)
       bootAfterUnlock();
-      gate.remove();    // remove the gate from DOM to avoid focus traps
+      gate.remove();
     }, 280);
   };
 
@@ -193,7 +186,7 @@ function tokenizeText(text) {
   return parts;
 }
 
-// Reserve final height so center doesn't shift
+// Reserve final height so center doesn't shift (no countdown line reserved)
 function reservePanelHeight() {
   const panel = document.querySelector(".panel");
   if (!panel) return;
@@ -209,7 +202,7 @@ function reservePanelHeight() {
   const gap = parseFloat(cs.marginTop) + parseFloat(cs.marginBottom);
   panel.removeChild(sample);
 
-  const total = lines.length + 1; // + countdown line
+  const total = lines.length; // no countdown line
   const reserved = total * lh + (total - 1) * gap;
   panel.style.minHeight = `${reserved}px`;
 }
@@ -266,6 +259,13 @@ async function typeInto(el, text, speed) {
   setCursor(el);
 }
 
+// Single timer: fade to ΣΑΕ overlay after destroySeconds (no UI)
+let __fadeTimer;
+function scheduleAutoFade() {
+  clearTimeout(__fadeTimer);
+  __fadeTimer = setTimeout(obliterate, destroySeconds * 1000);
+}
+
 async function sequence() {
   await new Promise(r => setTimeout(r, initialDelayMs));
   for (let i = 0; i < lines.length; i++) {
@@ -274,26 +274,7 @@ async function sequence() {
     await typeInto(el, lines[i], charDelayMs);
     await new Promise(r => setTimeout(r, linePauseMs));
   }
-  startCountdown();
-}
-
-function startCountdown() {
-  const destroyLine = byId("destroy");
-  const numEl = byId("t");
-  destroyLine.style.visibility = "visible";
-  requestAnimationFrame(() => {
-    destroyLine.classList.add("show");
-    fitPanelScale();
-  });
-
-  let t = destroySeconds;
-  numEl.textContent = t;
-  const tick = setInterval(() => {
-    t -= 1;
-    numEl.textContent = t;
-    fitPanelScale();
-    if (t <= 0) { clearInterval(tick); obliterate(); }
-  }, 1000);
+  // No countdown; fade happens via scheduleAutoFade()
 }
 
 function obliterate() {
@@ -305,13 +286,14 @@ function obliterate() {
   } else {
     showSigmaOnly();
   }
-  // Do NOT stop music here; it should keep playing on the ΣAE overlay.
+  // music keeps playing
 }
 
 // ---- Boot AFTER unlock (runs your original animation) ----
 function bootAfterUnlock() {
   reservePanelHeight();
   fitPanelScale();
+  scheduleAutoFade(); // start the 20s fade timer as soon as we unlock
 
   const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (prefersReduced) {
@@ -321,7 +303,6 @@ function bootAfterUnlock() {
       el.innerHTML = lines[i].replace(/(ΣΑΕ|SAE)/gi, '<span class="gold">$1</span>');
     }
     setCursor(byId("l" + (lines.length - 1)));
-    startCountdown();
     fitPanelScale();
   } else {
     sequence();
@@ -330,9 +311,6 @@ function bootAfterUnlock() {
 
 // ===== Initial boot (now gated) =====
 (function init() {
-  // If already "seen", we already bailed above.
-
-  // Show password gate and wait for unlock
   showGate();
 
   // Refit on viewport changes
@@ -386,17 +364,14 @@ function fadeAudio(audio, target = 0.35, ms = 800) {
  */
 function autoplayBgmHard() {
   const a = ensureBgm();
-  a.currentTime = 0;    // restart on each load
+  a.currentTime = 0;
 
   const tryPlay = () => a.play().catch(() => {});
-  // Kick a few attempts during early load (helps with iOS timing)
   tryPlay();
   const retries = [150, 400, 800, 1200, 1800];
   retries.forEach(t => setTimeout(tryPlay, t));
 
-  // Once the audio is actually playing, unmute and fade in
   const onPlaying = () => {
-    // small delay before unmute to avoid policy edge-cases
     setTimeout(() => {
       a.muted = false;
       fadeAudio(a, 0.35, 900);
@@ -405,22 +380,18 @@ function autoplayBgmHard() {
   };
   a.addEventListener("playing", onPlaying);
 
-  // Fallback: if metadata is ready but "playing" didn't fire yet, poke play again
   a.addEventListener("canplay", tryPlay, { once: true });
-
-  // If the page is restored from bfcache, try again
   window.addEventListener("pageshow", () => { tryPlay(); }, { once: true });
 }
 
-// Keep your existing playBgm() for the post-unlock (gesture) path if you want:
+// Keep your existing playBgm() for the post-unlock (gesture) path
 async function playBgm() {
   const a = ensureBgm();
   try {
     a.currentTime = 0;
-    await a.play();            // allowed due to the unlock gesture
+    await a.play();
     fadeAudio(a, 0.35, 800);
   } catch {}
 }
-
 
 //localStorage.removeItem("sae_once_seen_v1");
