@@ -7,7 +7,6 @@ const lines = [
   "September 19th",
   "Doors Open 10:30",
   "Black Attire Mandatory",
-  "SPREAD THE WORD"
 ];
 const initialDelayMs = 500;
 const charDelayMs = 28;
